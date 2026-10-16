@@ -6,11 +6,17 @@ name: Deploy to Cloudways
 on:
   push:
     branches: [ main ]
-  workflow_dispatch: {}   # allow manual run from the Actions tab too
+  workflow_dispatch: {}
 
 concurrency:
   group: cloudways-deploy
   cancel-in-progress: false
+
+env:
+  SERVER_ID: "1196670"
+  APP_ID: "6730213"
+  BRANCH: "main"
+  DEPLOY_PATH: "public_html"
 
 jobs:
   deploy:
@@ -20,36 +26,53 @@ jobs:
         env:
           CW_EMAIL: ${{ secrets.CLOUDWAYS_EMAIL }}
           CW_API_KEY: ${{ secrets.CLOUDWAYS_API_KEY }}
-          SERVER_ID: "1196670"
-          APP_ID: "6730213"
-          BRANCH: "main"
-          DEPLOY_PATH: "public_html"
         run: |
-          set -euo pipefail
+          set -uo pipefail
 
-          echo "==> Requesting Cloudways access token"
-          TOKEN=$(curl -sS -X POST "https://api.cloudways.com/api/v1/oauth/access_token" \
-            --data-urlencode "email=${CW_EMAIL}" \
-            --data-urlencode "api_key=${CW_API_KEY}" \
-            | python3 -c "import sys,json; print(json.load(sys.stdin).get('access_token',''))")
+          pull_call () {
+            # $1 = Authorization header value
+            curl -s -o /tmp/pull.json -w "%{http_code}" -X POST \
+              "https://api.cloudways.com/api/v1/git/pull" \
+              -H "Authorization: $1" \
+              --data-urlencode "server_id=${SERVER_ID}" \
+              --data-urlencode "app_id=${APP_ID}" \
+              --data-urlencode "branch_name=${BRANCH}" \
+              --data-urlencode "deploy_path=${DEPLOY_PATH}"
+          }
 
-          if [ -z "${TOKEN}" ]; then
-            echo "::error::Could not obtain Cloudways access token (check CLOUDWAYS_EMAIL / CLOUDWAYS_API_KEY)."
-            exit 1
+          echo "===== Method A: use the access token directly as Bearer ====="
+          CODE_A=$(pull_call "Bearer ${CW_API_KEY}")
+          echo "git/pull HTTP ${CODE_A}"
+          echo "response:"; cat /tmp/pull.json; echo
+          if [ "${CODE_A}" = "200" ]; then
+            echo "==> Deploy triggered (direct token)."; exit 0
           fi
-          echo "Access token obtained."
 
-          echo "==> Triggering git pull on app ${APP_ID} (server ${SERVER_ID}), path ${DEPLOY_PATH}"
-          RESP=$(curl -sS -X POST "https://api.cloudways.com/api/v1/git/pull" \
-            -H "Authorization: Bearer ${TOKEN}" \
-            --data-urlencode "server_id=${SERVER_ID}" \
-            --data-urlencode "app_id=${APP_ID}" \
-            --data-urlencode "branch_name=${BRANCH}" \
-            --data-urlencode "deploy_path=${DEPLOY_PATH}")
+          echo "===== Method B: legacy oauth exchange (email + api_key) ====="
+          OAUTH_CODE=$(curl -s -o /tmp/tok.json -w "%{http_code}" -X POST \
+            "https://api.cloudways.com/api/v1/oauth/access_token" \
+            --data-urlencode "email=${CW_EMAIL}" \
+            --data-urlencode "api_key=${CW_API_KEY}")
+          echo "oauth HTTP ${OAUTH_CODE}"
+          python3 - <<'PY'
+          import json
+          try:
+              d=json.load(open('/tmp/tok.json'))
+          except Exception as e:
+              print("oauth response not JSON:", open('/tmp/tok.json').read()[:300]); raise SystemExit(0)
+          has=bool(d.get('access_token'))
+          d2={k:v for k,v in d.items() if k!='access_token'}
+          print("oauth has access_token:", has, "| other fields:", d2)
+          PY
+          TOKEN=$(python3 -c "import json;print(json.load(open('/tmp/tok.json')).get('access_token',''))" 2>/dev/null || echo "")
+          if [ -n "${TOKEN}" ]; then
+            CODE_B=$(pull_call "Bearer ${TOKEN}")
+            echo "git/pull HTTP ${CODE_B}"
+            echo "response:"; cat /tmp/pull.json; echo
+            if [ "${CODE_B}" = "200" ]; then
+              echo "==> Deploy triggered (oauth token)."; exit 0
+            fi
+          fi
 
-          echo "Pull response: ${RESP}"
-
-          # Cloudways returns an operation id for a queued pull; surface failures clearly.
-          echo "${RESP}" | python3 -c "import sys,json; d=json.load(sys.stdin); sys.exit(0) if (d.get('operation_id') or d.get('status') in (True,'true')) else (print('::error::git pull not accepted:',d) or sys.exit(1))" || exit 1
-
-          echo "==> Deploy triggered successfully."
+          echo "::error::Neither direct token nor oauth exchange triggered the pull. See responses above."
+          exit 1
