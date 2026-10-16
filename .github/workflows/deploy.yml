@@ -1,0 +1,55 @@
+name: Deploy to Cloudways
+
+# Auto-deploys the site to the Cloudways app on every push to main,
+# by calling the Cloudways API to trigger a git pull. No manual "Pull" click.
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch: {}   # allow manual run from the Actions tab too
+
+concurrency:
+  group: cloudways-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger Cloudways git pull
+        env:
+          CW_EMAIL: ${{ secrets.CLOUDWAYS_EMAIL }}
+          CW_API_KEY: ${{ secrets.CLOUDWAYS_API_KEY }}
+          SERVER_ID: "1196670"
+          APP_ID: "6730213"
+          BRANCH: "main"
+          DEPLOY_PATH: "public_html"
+        run: |
+          set -euo pipefail
+
+          echo "==> Requesting Cloudways access token"
+          TOKEN=$(curl -sS -X POST "https://api.cloudways.com/api/v1/oauth/access_token" \
+            --data-urlencode "email=${CW_EMAIL}" \
+            --data-urlencode "api_key=${CW_API_KEY}" \
+            | python3 -c "import sys,json; print(json.load(sys.stdin).get('access_token',''))")
+
+          if [ -z "${TOKEN}" ]; then
+            echo "::error::Could not obtain Cloudways access token (check CLOUDWAYS_EMAIL / CLOUDWAYS_API_KEY)."
+            exit 1
+          fi
+          echo "Access token obtained."
+
+          echo "==> Triggering git pull on app ${APP_ID} (server ${SERVER_ID}), path ${DEPLOY_PATH}"
+          RESP=$(curl -sS -X POST "https://api.cloudways.com/api/v1/git/pull" \
+            -H "Authorization: Bearer ${TOKEN}" \
+            --data-urlencode "server_id=${SERVER_ID}" \
+            --data-urlencode "app_id=${APP_ID}" \
+            --data-urlencode "branch_name=${BRANCH}" \
+            --data-urlencode "deploy_path=${DEPLOY_PATH}")
+
+          echo "Pull response: ${RESP}"
+
+          # Cloudways returns an operation id for a queued pull; surface failures clearly.
+          echo "${RESP}" | python3 -c "import sys,json; d=json.load(sys.stdin); sys.exit(0) if (d.get('operation_id') or d.get('status') in (True,'true')) else (print('::error::git pull not accepted:',d) or sys.exit(1))" || exit 1
+
+          echo "==> Deploy triggered successfully."
