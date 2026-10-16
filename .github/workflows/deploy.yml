@@ -1,7 +1,7 @@
 name: Deploy to Cloudways
 
-# Auto-deploys the site to the Cloudways app on every push to main,
-# by calling the Cloudways API to trigger a git pull. No manual "Pull" click.
+# Auto-deploys on every push to main by calling the Cloudways API to trigger
+# the app's git pull. Uses a Cloudways Access Token (Bearer) — no manual click.
 
 on:
   push:
@@ -12,67 +12,28 @@ concurrency:
   group: cloudways-deploy
   cancel-in-progress: false
 
-env:
-  SERVER_ID: "1196670"
-  APP_ID: "6730213"
-  BRANCH: "main"
-  DEPLOY_PATH: "public_html"
-
 jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
       - name: Trigger Cloudways git pull
         env:
-          CW_EMAIL: ${{ secrets.CLOUDWAYS_EMAIL }}
-          CW_API_KEY: ${{ secrets.CLOUDWAYS_API_KEY }}
+          CW_TOKEN: ${{ secrets.CLOUDWAYS_API_KEY }}
         run: |
-          set -uo pipefail
-
-          pull_call () {
-            # $1 = Authorization header value
-            curl -s -o /tmp/pull.json -w "%{http_code}" -X POST \
-              "https://api.cloudways.com/api/v1/git/pull" \
-              -H "Authorization: $1" \
-              --data-urlencode "server_id=${SERVER_ID}" \
-              --data-urlencode "app_id=${APP_ID}" \
-              --data-urlencode "branch_name=${BRANCH}" \
-              --data-urlencode "deploy_path=${DEPLOY_PATH}"
-          }
-
-          echo "===== Method A: use the access token directly as Bearer ====="
-          CODE_A=$(pull_call "Bearer ${CW_API_KEY}")
-          echo "git/pull HTTP ${CODE_A}"
-          echo "response:"; cat /tmp/pull.json; echo
-          if [ "${CODE_A}" = "200" ]; then
-            echo "==> Deploy triggered (direct token)."; exit 0
+          set -o pipefail
+          echo "Triggering Cloudways git pull for app 6730213 (server 1196670)..."
+          HTTP=$(curl -sS -o /tmp/resp.json -w "%{http_code}" --request POST \
+            --url "https://api.cloudways.com/api/v1/git/pull" \
+            --header "Authorization: Bearer ${CW_TOKEN}" \
+            --header "Content-Type: application/x-www-form-urlencoded" \
+            --data-urlencode "server_id=1196670" \
+            --data-urlencode "app_id=6730213" \
+            --data-urlencode "branch_name=main" \
+            --data-urlencode "deploy_path=")
+          echo "HTTP ${HTTP}"
+          echo "Response:"; cat /tmp/resp.json; echo
+          if [ "${HTTP}" != "200" ]; then
+            echo "::error::Cloudways git pull failed (HTTP ${HTTP}). A 401 usually means the Access Token lacks the 'Git' permission scope — recreate it with Full Access (or Git scope) and update the CLOUDWAYS_API_KEY secret."
+            exit 1
           fi
-
-          echo "===== Method B: legacy oauth exchange (email + api_key) ====="
-          OAUTH_CODE=$(curl -s -o /tmp/tok.json -w "%{http_code}" -X POST \
-            "https://api.cloudways.com/api/v1/oauth/access_token" \
-            --data-urlencode "email=${CW_EMAIL}" \
-            --data-urlencode "api_key=${CW_API_KEY}")
-          echo "oauth HTTP ${OAUTH_CODE}"
-          python3 - <<'PY'
-          import json
-          try:
-              d=json.load(open('/tmp/tok.json'))
-          except Exception as e:
-              print("oauth response not JSON:", open('/tmp/tok.json').read()[:300]); raise SystemExit(0)
-          has=bool(d.get('access_token'))
-          d2={k:v for k,v in d.items() if k!='access_token'}
-          print("oauth has access_token:", has, "| other fields:", d2)
-          PY
-          TOKEN=$(python3 -c "import json;print(json.load(open('/tmp/tok.json')).get('access_token',''))" 2>/dev/null || echo "")
-          if [ -n "${TOKEN}" ]; then
-            CODE_B=$(pull_call "Bearer ${TOKEN}")
-            echo "git/pull HTTP ${CODE_B}"
-            echo "response:"; cat /tmp/pull.json; echo
-            if [ "${CODE_B}" = "200" ]; then
-              echo "==> Deploy triggered (oauth token)."; exit 0
-            fi
-          fi
-
-          echo "::error::Neither direct token nor oauth exchange triggered the pull. See responses above."
-          exit 1
+          echo "==> Deploy triggered successfully."
