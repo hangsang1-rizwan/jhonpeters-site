@@ -128,3 +128,15 @@ footer ul{list-style:none;font-size:14px;line-height:2.1}footer ul a:hover{color
 .pager .pg.on{background:var(--green);border-color:var(--green);color:#fff}
 .pager .pg.dots{border:0;min-width:auto;width:auto;padding:0 2px;color:var(--muted)}
 @media(max-width:700px){.pager .pg{min-width:38px;height:38px;padding:0 11px;font-size:13px}}
+
+/* ===== Homepage: category coverage directory + section polish ===== */
+.catsec{max-width:1280px;margin:0 auto;padding:6px 28px 10px}
+.catsec .dept{margin-bottom:26px}
+.catsec .dept h3{font-family:"Fraunces",Georgia,serif;font-size:20px;color:var(--green-d);margin-bottom:13px;display:flex;align-items:baseline;gap:14px;flex-wrap:wrap}
+.catsec .dept h3 a{font-family:"Jost",sans-serif;font-size:11px;font-weight:500;letter-spacing:.12em;text-transform:uppercase;color:var(--green);border-bottom:1px solid var(--green)}
+.catsec .chips{display:flex;flex-wrap:wrap;gap:9px}
+.catsec .chips a{border:1px solid #e3d9c8;background:#fff;border-radius:30px;padding:8px 16px;font-size:13px;color:#3a3528;transition:.18s;line-height:1}
+.catsec .chips a:hover{border-color:var(--green);color:var(--green);background:var(--cream)}
+@media(max-width:640px){.catsec{padding:6px 16px}.catsec .chips a{font-size:12px;padding:7px 13px}}
+/* bigger department image tiles on the homepage */
+.sec .tiles.dept6{grid-template-columns:repeat(auto-fit,minmax(300px,1fr))}
