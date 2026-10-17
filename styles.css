@@ -138,5 +138,6 @@ footer ul{list-style:none;font-size:14px;line-height:2.1}footer ul a:hover{color
 .catsec .chips a{border:1px solid #e3d9c8;background:#fff;border-radius:30px;padding:8px 16px;font-size:13px;color:#3a3528;transition:.18s;line-height:1}
 .catsec .chips a:hover{border-color:var(--green);color:var(--green);background:var(--cream)}
 @media(max-width:640px){.catsec{padding:6px 16px}.catsec .chips a{font-size:12px;padding:7px 13px}}
-/* bigger department image tiles on the homepage */
-.sec .tiles.dept6{grid-template-columns:repeat(auto-fit,minmax(300px,1fr))}
+/* department image tiles on the homepage: 4 across (8 = clean 2 rows) */
+.sec .tiles.dept6{grid-template-columns:repeat(4,1fr)}
+@media(max-width:860px){.sec .tiles.dept6{grid-template-columns:repeat(2,1fr)}}
